@@ -1,0 +1,5 @@
+{
+  "name": "GymGenie: AI Workout Planner",
+  "description": "An interactive workout application that generates and customizes your gym sessions using AI. Input your goals, and let GymGenie create a personalized 5-day plan that you can modify on the fly with natural language.",
+  "requestFramePermissions": []
+}
