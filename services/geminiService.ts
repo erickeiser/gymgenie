@@ -94,7 +94,7 @@ export const generateInitialPlan = async (user: Profile): Promise<Workout[]> => 
         return plan.sort((a, b) => a.week - b.week || a.day - b.day);
     } catch (error) {
         console.error("Error generating initial plan:", error);
-        throw new Error("Failed to generate workout plan. The AI might be busy. Please try again later.");
+        throw error;
     }
 };
 
@@ -137,6 +137,6 @@ export const modifyWorkoutPlan = async (currentPlan: Workout[], userRequest: str
 
     } catch (error) {
         console.error("Error modifying workout plan:", error);
-        throw new Error("Failed to modify workout plan. The AI might be busy or returned an unexpected format. Please try again.");
+        throw error;
     }
 };
