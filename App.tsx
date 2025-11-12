@@ -127,12 +127,12 @@ function App() {
       setPlan(newPlan);
       setPreviousState(null);
     } catch (error: any) {
+        console.error("Full error object on plan creation:", error);
         if (error.message.includes("API_KEY")) {
             setError("Configuration Error: The AI service is not set up correctly. Please contact the administrator.");
         } else {
-            setError("Failed to generate workout plan. The AI might be busy. Please try again later.");
+            setError(`Failed to generate workout plan. ${error.message || 'The AI might be busy. Please try again later.'}`);
         }
-        console.error(error);
     } finally {
       setLoading(null);
     }
@@ -166,15 +166,18 @@ function App() {
   const handleModifyPlan = async (request: string) => {
     if (!plan) return;
     setIsModifying(true);
+    setError(null); // Clear previous errors
     try {
         const newPlan = await modifyWorkoutPlan(plan, request);
         setPlan(newPlan);
         updatePlanInDb(newPlan);
-    } catch (error) {
-        setError("Failed to modify the plan. Please try again.");
+        setIsChatOpen(false); // Close on success
+    } catch (error: any) {
+        console.error("Full error object on plan modification:", error);
+        setError(`Failed to modify the plan. ${error.message || 'Please try again.'}`);
+        setIsChatOpen(false); // Close on failure to show main error
     } finally {
         setIsModifying(false);
-        setIsChatOpen(false);
     }
   };
   
@@ -241,9 +244,13 @@ function App() {
             <div className="flex flex-col items-center justify-center min-h-[80vh] text-white p-4 text-center">
                 <h2 className="text-2xl font-bold text-red-400">Oops! Something went wrong.</h2>
                 <p className="mt-2 text-gray-400 max-w-md">{error}</p>
-                {previousState && (
+                {previousState ? (
                     <button onClick={handleGoBack} className="mt-6 bg-brand-blue text-white font-bold py-2 px-6 rounded-md hover:bg-blue-600 transition-colors">
                         Go Back
+                    </button>
+                ) : (
+                    <button onClick={handleStartOver} className="mt-6 bg-brand-gray text-white font-bold py-2 px-6 rounded-md hover:bg-opacity-80 transition-colors">
+                        Start Over
                     </button>
                 )}
             </div>
@@ -265,6 +272,7 @@ function App() {
                 </div>
                 <div className="bg-brand-light-dark/20 rounded-lg border border-brand-gray/20">
                     <DailyWorkoutView
+                        plan={plan}
                         workout={currentWorkout}
                         onToggleExercise={handleToggleExercise}
                         onLogWorkout={handleLogWorkout}

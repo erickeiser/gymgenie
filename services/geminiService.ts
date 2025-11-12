@@ -1,16 +1,54 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
-// Fix: Replaced undefined UserProfile type with Profile.
+import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import type { Profile, Workout } from '../types';
 import { WORKOUT_GOALS, PHYSIQUE_GOALS } from "../constants";
 
 const getAiClient = () => {
-    const API_KEY = process.env.API_KEY;
-    if (!API_KEY) {
-      throw new Error("API_KEY environment variable is not set. The application cannot connect to the AI service.");
-    }
+    // Note: Using a hardcoded API key is not recommended for production applications.
+    // It's better to use environment variables for security.
+    const API_KEY = 'AIzaSyCSVw08mLd845rh6nZYU6trKiYm7nxi8XY';
     return new GoogleGenAI({ apiKey: API_KEY });
 }
+
+const callGeminiWithRetries = async (
+    prompt: string, 
+    config: any, 
+    retries = 3
+): Promise<GenerateContentResponse> => {
+    const ai = getAiClient();
+    let lastError: any;
+
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const response = await ai.models.generateContent({
+                model: "gemini-2.5-flash",
+                contents: prompt,
+                config,
+            });
+
+            if (!response.text) {
+                console.warn(`Gemini API returned an empty response on attempt ${attempt}.`, { response });
+                throw new Error("The AI service returned an empty response, which could be due to content safety filters.");
+            }
+            return response;
+        } catch (error: any) {
+            lastError = error;
+            console.error(`Gemini API call attempt ${attempt} failed.`, {
+                message: error.message,
+                details: JSON.stringify(error, null, 2)
+            });
+            if (attempt < retries) {
+                const delay = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s
+                console.log(`Retrying in ${delay / 1000}s...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+
+    console.error("All Gemini API call attempts failed.");
+    // Add more context to the final thrown error
+    throw new Error(`The AI service failed after ${retries} attempts. Last error: ${lastError.message}`);
+};
 
 const workoutSchema = {
     type: Type.ARRAY,
@@ -77,30 +115,24 @@ const getBasePrompt = (user: Profile): string => {
 
 export const generateInitialPlan = async (user: Profile): Promise<Workout[]> => {
     try {
-        const ai = getAiClient();
         const prompt = getBasePrompt(user);
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: workoutSchema,
-            },
-        });
+        const config = {
+            responseMimeType: "application/json",
+            responseSchema: workoutSchema,
+        };
+        const response = await callGeminiWithRetries(prompt, config);
         
         const jsonText = response.text.trim();
         const plan = JSON.parse(jsonText) as Workout[];
-        // Sort by week, then day
         return plan.sort((a, b) => a.week - b.week || a.day - b.day);
-    } catch (error) {
-        console.error("Error generating initial plan:", error);
-        throw error;
+    } catch (error: any) {
+        console.error("Failed to generate initial plan after all retries:", error);
+        throw error; // Rethrow the detailed error from callGeminiWithRetries
     }
 };
 
 export const modifyWorkoutPlan = async (currentPlan: Workout[], userRequest: string): Promise<Workout[]> => {
     try {
-        const ai = getAiClient();
         const prompt = `
         You are an AI assistant that modifies a user's 12-week workout plan based on their request.
         The user's current plan is provided as a JSON object. The user's modification request is provided as a string.
@@ -121,22 +153,18 @@ export const modifyWorkoutPlan = async (currentPlan: Workout[], userRequest: str
 
         Now, provide the complete, modified 12-week plan as a single JSON array.
         `;
-
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-             config: {
-                responseMimeType: "application/json",
-                responseSchema: workoutSchema,
-            },
-        });
+        const config = {
+            responseMimeType: "application/json",
+            responseSchema: workoutSchema,
+        };
+        const response = await callGeminiWithRetries(prompt, config);
         
         const jsonText = response.text.trim();
         const plan = JSON.parse(jsonText) as Workout[];
         return plan.sort((a, b) => a.week - b.week || a.day - b.day);
 
-    } catch (error) {
-        console.error("Error modifying workout plan:", error);
-        throw error;
+    } catch (error: any) {
+        console.error("Failed to modify workout plan after all retries:", error);
+        throw error; // Rethrow the detailed error from callGeminiWithRetries
     }
 };
