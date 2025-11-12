@@ -62,7 +62,7 @@ const App: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select(`*`)
+        .select('*') // Use wildcard to handle missing columns gracefully
         .eq('id', currentSession.user.id)
         .single();
 
@@ -133,11 +133,10 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const startDate = new Date().toISOString();
+      // Do not create or save plan_start_date as the column may not exist in the backend.
       const newProfile: Profile = { 
         ...profileData, 
-        id: session.user.id,
-        plan_start_date: startDate 
+        id: session.user.id
       };
       const newPlan = await generateInitialPlan(newProfile);
       
