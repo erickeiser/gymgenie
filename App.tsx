@@ -252,8 +252,8 @@ function App() {
       
       if (profile && plan) {
         return (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-7xl mx-auto">
-                <div className="lg:col-span-1">
+            <div className="grid grid-cols-1 gap-6 max-w-7xl mx-auto">
+                <div className="bg-brand-light-dark/20 rounded-lg border border-brand-gray/20">
                     <WorkoutPlanView
                         plan={plan}
                         currentWeek={currentWeek}
@@ -263,7 +263,7 @@ function App() {
                         todayIndex={todayIndex}
                     />
                 </div>
-                <div className="lg:col-span-1 bg-brand-dark rounded-lg">
+                <div className="bg-brand-light-dark/20 rounded-lg border border-brand-gray/20">
                     <DailyWorkoutView
                         workout={currentWorkout}
                         onToggleExercise={handleToggleExercise}

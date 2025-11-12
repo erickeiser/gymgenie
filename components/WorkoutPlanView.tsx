@@ -43,7 +43,7 @@ const WorkoutPlanView: React.FC<WorkoutPlanViewProps> = ({ plan, currentWeek, on
           <button
             key={workout.day}
             onClick={() => onSelectDay(workout.day)}
-            className={`relative flex-shrink-0 w-32 h-32 sm:w-40 sm:h-40 p-4 rounded-lg transition-all duration-300 text-left flex flex-col justify-between ${
+            className={`relative flex-shrink-0 w-40 h-48 sm:w-48 sm:h-52 p-4 rounded-lg transition-all duration-300 text-left flex flex-col justify-between ${
               isSelected
                 ? 'bg-brand-blue text-white scale-105 shadow-lg shadow-blue-500/30'
                 : 'bg-brand-light-dark text-gray-300 hover:bg-brand-gray'
