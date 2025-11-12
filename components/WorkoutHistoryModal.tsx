@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import type { WorkoutHistoryEntry } from '../types';
 import { DumbbellIcon, RunIcon, CheckCircleIcon } from './icons';

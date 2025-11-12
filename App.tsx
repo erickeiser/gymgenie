@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Profile, Workout, WorkoutHistoryEntry } from './types';
 import UserProfileModal from './components/UserProfileModal';
@@ -69,17 +70,20 @@ const App: React.FC = () => {
         throw error;
       }
       
-      if (data && data.plan) {
-        // Fix: Destructure plan and profile data to correctly populate separate states.
+      if (data) { // Profile exists
         const { plan, ...profileData } = data;
         const userProfile = profileData as Profile;
         setProfile(userProfile);
-        setPlan(plan as Workout[]);
-        const calculatedWeek = calculateCurrentWeek(userProfile.plan_start_date);
-        setCurrentWeek(calculatedWeek);
-        // If it's a new week, default to the first day
-        setCurrentDay(calculatedWeek > currentWeek ? 1 : todayIndex);
-      } else {
+
+        if (plan) { // Plan also exists
+          setPlan(plan as Workout[]);
+          const calculatedWeek = calculateCurrentWeek(userProfile.plan_start_date);
+          setCurrentWeek(calculatedWeek);
+          setCurrentDay(todayIndex);
+        } else { // Profile exists, but no plan
+          setPlan(null);
+        }
+      } else { // No profile exists for this user
         setProfile(null);
         setPlan(null);
       }
@@ -88,16 +92,13 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [todayIndex, currentWeek]);
+  }, [todayIndex]);
 
+  // Effect for handling authentication state changes
   useEffect(() => {
-    setHistory(getWorkoutHistory());
-
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       setSession(initialSession);
-      if (initialSession) {
-        fetchUserData(initialSession);
-      } else {
+      if (!initialSession) {
         setIsLoading(false);
       }
     });
@@ -105,19 +106,27 @@ const App: React.FC = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, newSession) => {
         setSession(newSession);
-        if (newSession) {
-            if (!profile || profile.id !== newSession.user.id) {
-                fetchUserData(newSession);
-            }
-        } else {
-            setProfile(null);
-            setPlan(null);
-            setIsLoading(false);
-        }
       }
     );
     return () => subscription.unsubscribe();
-  }, [fetchUserData, profile]);
+  }, []);
+  
+  // Effect for fetching user data when the session is available
+  useEffect(() => {
+      if (session) {
+          fetchUserData(session);
+      } else {
+          // Clear user data on logout
+          setProfile(null);
+          setPlan(null);
+          setIsLoading(false);
+      }
+  }, [session, fetchUserData]);
+
+  // Effect for loading workout history from local storage
+  useEffect(() => {
+    setHistory(getWorkoutHistory());
+  }, []);
 
   const handleProfileSubmit = async (profileData: Omit<Profile, 'id'>) => {
     if (!session) return;
@@ -144,7 +153,11 @@ const App: React.FC = () => {
       setCurrentWeek(1);
       setCurrentDay(todayIndex);
     } catch (e: any) {
-      setError(e.message || "An unknown error occurred.");
+      if (e.message?.includes("API_KEY environment variable is not set")) {
+        setError("Configuration Error: The AI service is not set up correctly. Please contact the administrator.");
+      } else {
+        setError(e.message || "An unknown error occurred.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -167,7 +180,11 @@ const App: React.FC = () => {
       setPlan(modifiedPlan);
       setIsChatOpen(false);
     } catch (e: any) {
-      setError(e.message || "An unknown error occurred.");
+      if (e.message?.includes("API_KEY environment variable is not set")) {
+        setError("Configuration Error: The AI service is not set up correctly. Please contact the administrator.");
+      } else {
+        setError(e.message || "An unknown error occurred.");
+      }
     } finally {
       setIsModifying(false);
     }
@@ -225,15 +242,12 @@ const App: React.FC = () => {
   }, [history, currentWorkout]);
 
   const handleLogout = async () => {
-    setIsLoading(true);
-    await supabase.auth.signOut();
-    setSession(null);
-    setProfile(null);
-    setPlan(null);
-    setCurrentWeek(1);
-    setCurrentDay(todayIndex);
     setError(null);
-    setIsLoading(false);
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      setError("Failed to log out. Please try again.");
+    }
+    // State will be cleared by the onAuthStateChange listener
   };
 
   const handleStartOver = () => {
