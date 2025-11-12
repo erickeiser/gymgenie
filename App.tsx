@@ -62,7 +62,7 @@ const App: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, name, height, weight, goalWeight, goal, physique, plan, plan_start_date')
+        .select('id, name, height, weight, goalWeight, goal, physique, plan')
         .eq('id', currentSession.user.id)
         .single();
 
@@ -133,16 +133,20 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Do not create or save plan_start_date as the column may not exist in the backend.
       const newProfile: Profile = { 
         ...profileData, 
         id: session.user.id,
-        plan_start_date: new Date().toISOString(),
       };
       const newPlan = await generateInitialPlan(newProfile);
       
       const { error } = await supabase.from('profiles').upsert({
-          ...newProfile,
+          id: newProfile.id,
+          name: newProfile.name,
+          height: newProfile.height,
+          weight: newProfile.weight,
+          goalWeight: newProfile.goalWeight,
+          goal: newProfile.goal,
+          physique: newProfile.physique,
           plan: newPlan,
           updated_at: new Date(),
       });
