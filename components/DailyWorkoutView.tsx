@@ -7,9 +7,11 @@ import Timer from './Timer';
 interface DailyWorkoutViewProps {
   workout: Workout | undefined;
   onToggleExercise: (week: number, day: number, exerciseName: string) => void;
+  onLogWorkout: (workout: Workout) => void;
+  isWorkoutLogged: boolean;
 }
 
-const DailyWorkoutView: React.FC<DailyWorkoutViewProps> = ({ workout, onToggleExercise }) => {
+const DailyWorkoutView: React.FC<DailyWorkoutViewProps> = ({ workout, onToggleExercise, onLogWorkout, isWorkoutLogged }) => {
   if (!workout) {
     return (
       <div className="p-4 text-center text-gray-400">
@@ -78,6 +80,30 @@ const DailyWorkoutView: React.FC<DailyWorkoutViewProps> = ({ workout, onToggleEx
           <p className="text-lg font-semibold text-white mb-2">{workout.cardio.type}</p>
           <Timer durationMinutes={workout.cardio.duration} />
         </div>
+      </div>
+      
+      {/* Log Workout Section */}
+      <div className="mt-6 flex flex-col items-center">
+        {isWorkoutLogged ? (
+            <div className="text-center p-3 rounded-md bg-green-900/50 text-green-400 font-semibold flex items-center space-x-2">
+                <CheckCircleIcon className="w-6 h-6" />
+                <span>Workout for today already logged!</span>
+            </div>
+        ) : (
+            <button
+                onClick={() => onLogWorkout(workout)}
+                disabled={!allCompleted}
+                className="bg-brand-blue text-white font-bold py-3 px-8 rounded-full shadow-lg hover:bg-blue-600 transition-all hover:scale-105 flex items-center space-x-2 disabled:bg-brand-gray disabled:cursor-not-allowed disabled:scale-100"
+            >
+                <CheckCircleIcon className="w-6 h-6" />
+                <span>Log Today's Workout</span>
+            </button>
+        )}
+        {!allCompleted && !isWorkoutLogged && (
+            <p className="text-center text-gray-500 text-sm mt-2">
+                Complete all weight exercises to log your session.
+            </p>
+        )}
       </div>
     </div>
   );

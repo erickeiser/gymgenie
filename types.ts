@@ -12,6 +12,7 @@ export interface Profile {
   goalWeight: number;
   goal: 'build_muscle' | 'lose_weight' | 'maintain_fitness';
   physique: Physique;
+  plan_start_date?: string; // Date the 12-week plan was started
 }
 
 export interface Exercise {
@@ -38,4 +39,9 @@ export interface Workout {
 // Fix: Added UserSession type for use in UserSelection component.
 export interface UserSession {
   profile: Profile;
+}
+
+export interface WorkoutHistoryEntry {
+  completedDate: string;
+  workout: Workout;
 }
