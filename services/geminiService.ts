@@ -4,13 +4,13 @@ import { GoogleGenAI, Type } from "@google/genai";
 import type { Profile, Workout } from '../types';
 import { WORKOUT_GOALS, PHYSIQUE_GOALS } from "../constants";
 
-const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-  throw new Error("API_KEY environment variable is not set");
+const getAiClient = () => {
+    const API_KEY = process.env.API_KEY;
+    if (!API_KEY) {
+      throw new Error("API_KEY environment variable is not set. The application cannot connect to the AI service.");
+    }
+    return new GoogleGenAI({ apiKey: API_KEY });
 }
-
-const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 const workoutSchema = {
     type: Type.ARRAY,
@@ -77,6 +77,7 @@ const getBasePrompt = (user: Profile): string => {
 
 export const generateInitialPlan = async (user: Profile): Promise<Workout[]> => {
     try {
+        const ai = getAiClient();
         const prompt = getBasePrompt(user);
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
@@ -99,6 +100,7 @@ export const generateInitialPlan = async (user: Profile): Promise<Workout[]> => 
 
 export const modifyWorkoutPlan = async (currentPlan: Workout[], userRequest: string): Promise<Workout[]> => {
     try {
+        const ai = getAiClient();
         const prompt = `
         You are an AI assistant that modifies a user's 12-week workout plan based on their request.
         The user's current plan is provided as a JSON object. The user's modification request is provided as a string.
