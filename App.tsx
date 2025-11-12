@@ -1,375 +1,325 @@
 
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Profile, Workout, WorkoutHistoryEntry } from './types';
 import UserProfileModal from './components/UserProfileModal';
 import WorkoutPlanView from './components/WorkoutPlanView';
 import DailyWorkoutView from './components/DailyWorkoutView';
 import GeminiChatModal from './components/GeminiChatModal';
+import Auth from './components/Auth';
 import WorkoutHistoryModal from './components/WorkoutHistoryModal';
 import { generateInitialPlan, modifyWorkoutPlan } from './services/geminiService';
-import { getWorkoutHistory, addWorkoutToHistory } from './services/historyService';
-import { BotIcon, LoaderIcon, HistoryIcon } from './components/icons';
-import Auth from './components/Auth';
 import { supabase } from './supabaseClient';
 import type { Session } from '@supabase/supabase-js';
+import { BotIcon, LoaderIcon, HistoryIcon } from './components/icons';
+import { getWorkoutHistory, addWorkoutToHistory } from './services/historyService';
 
-const getTodayIndex = (): number => {
-    const day = new Date().getDay(); // Sunday = 0, Monday = 1, ..., Saturday = 6
-    if (day >= 1 && day <= 5) {
-        return day; // Monday is 1, Tuesday is 2, etc.
-    }
-    return 1; // Default to Monday (Day 1) on weekends
-};
-
-const calculateCurrentWeek = (startDateString?: string): number => {
-    if (!startDateString) return 1;
-    const startDate = new Date(startDateString);
-    const today = new Date();
-    // Set hours to 0 to compare days only
-    startDate.setHours(0, 0, 0, 0);
-    today.setHours(0, 0, 0, 0);
-
-    if (startDate > today) return 1;
-
-    const msInWeek = 1000 * 60 * 60 * 24 * 7;
-    const weeksPassed = Math.floor((today.getTime() - startDate.getTime()) / msInWeek);
-    
-    const currentWeek = weeksPassed + 1;
-    return Math.min(Math.max(currentWeek, 1), 12); // Clamp between 1 and 12
-};
-
-const App: React.FC = () => {
+function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [plan, setPlan] = useState<Workout[] | null>(null);
-  
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isModifying, setIsModifying] = useState<boolean>(false);
+  const [loading, setLoading] = useState<string | null>('Authenticating...');
   const [error, setError] = useState<string | null>(null);
-  const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
-  const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
+
+  const [currentWeek, setCurrentWeek] = useState(1);
+  const [currentDay, setCurrentDay] = useState(new Date().getDay() || 1); 
+
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isModifying, setIsModifying] = useState(false);
+  
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [history, setHistory] = useState<WorkoutHistoryEntry[]>([]);
 
-  const todayIndex = useMemo(() => getTodayIndex(), []);
+  const [previousState, setPreviousState] = useState<{ profile: Profile; plan: Workout[] } | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (!session) {
+        setLoading(null);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+       if (!session) {
+        setProfile(null);
+        setPlan(null);
+        setLoading(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
   
-  const [currentWeek, setCurrentWeek] = useState<number>(1);
-  const [currentDay, setCurrentDay] = useState<number>(todayIndex);
-  
-  const fetchUserData = useCallback(async (currentSession: Session) => {
-    setIsLoading(true);
+  const fetchUserData = useCallback(async (userId: string) => {
+    setLoading('Loading your space...');
     setError(null);
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('id, name, height, weight, goalWeight, goal, physique, plan')
-        .eq('id', currentSession.user.id)
+        .eq('id', userId)
         .single();
-
+        
       if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
-        throw error;
+        throw new Error(`Database error: ${error.message}`);
       }
       
-      if (data) { // Profile exists
-        const { plan, ...profileData } = data;
-        const userProfile = profileData as Profile;
-        setProfile(userProfile);
-
-        if (plan) { // Plan also exists
-          setPlan(plan as Workout[]);
-          const calculatedWeek = calculateCurrentWeek(userProfile.plan_start_date);
-          setCurrentWeek(calculatedWeek);
-          setCurrentDay(todayIndex);
-        } else { // Profile exists, but no plan
-          setPlan(null);
-        }
-      } else { // No profile exists for this user
-        setProfile(null);
-        setPlan(null);
+      if (data) {
+          const profileData: Omit<Profile, 'plan_start_date'> = {
+              id: data.id,
+              name: data.name,
+              height: data.height,
+              weight: data.weight,
+              goalWeight: data.goalWeight,
+              goal: data.goal,
+              physique: data.physique,
+          };
+          const planData = data.plan as Workout[] | null;
+          
+          setProfile(profileData);
+          if (planData && planData.length > 0) {
+            setPlan(planData);
+          }
       }
-    } catch (e: any) {
-      setError(e.message || "Failed to fetch profile.");
+    } catch (err: any) {
+      setError(`Failed to load your profile. ${err.message}`);
     } finally {
-      setIsLoading(false);
+      setLoading(null);
     }
-  }, [todayIndex]);
-
-  // Effect for handling authentication state changes
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-      setSession(initialSession);
-      if (!initialSession) {
-        setIsLoading(false);
-      }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, newSession) => {
-        setSession(newSession);
-      }
-    );
-    return () => subscription.unsubscribe();
   }, []);
-  
-  // Effect for fetching user data when the session is available
-  useEffect(() => {
-      if (session) {
-          fetchUserData(session);
-      } else {
-          // Clear user data on logout
-          setProfile(null);
-          setPlan(null);
-          setIsLoading(false);
-      }
-  }, [session, fetchUserData]);
 
-  // Effect for loading workout history from local storage
+  useEffect(() => {
+    if (session?.user) {
+      fetchUserData(session.user.id);
+    }
+  }, [session, fetchUserData]);
+  
   useEffect(() => {
     setHistory(getWorkoutHistory());
   }, []);
 
-  const handleProfileSubmit = async (profileData: Omit<Profile, 'id'>) => {
-    if (!session) return;
-    setIsLoading(true);
+  const handleCreateProfile = async (profileData: Omit<Profile, 'id' | 'plan_start_date'>) => {
+    if (!session?.user) {
+      setError("You must be logged in to create a profile.");
+      return;
+    }
+    
+    setLoading('Generating your personalized plan...');
     setError(null);
+
     try {
-      const newProfile: Profile = { 
-        ...profileData, 
+      const newPlan = await generateInitialPlan({ ...profileData, id: session.user.id });
+      
+      const newProfile: Profile = {
+        ...profileData,
         id: session.user.id,
       };
-      const newPlan = await generateInitialPlan(newProfile);
-      
-      const { error } = await supabase.from('profiles').upsert({
-          id: newProfile.id,
-          name: newProfile.name,
-          height: newProfile.height,
-          weight: newProfile.weight,
-          goalWeight: newProfile.goalWeight,
-          goal: newProfile.goal,
-          physique: newProfile.physique,
-          plan: newPlan,
-          updated_at: new Date(),
+
+      const { error: dbError } = await supabase.from('profiles').upsert({
+        ...newProfile,
+        plan: newPlan,
       });
-      if (error) throw error;
-      
+
+      if (dbError) throw new Error(`Database error: ${dbError.message}`);
+
       setProfile(newProfile);
       setPlan(newPlan);
-      setCurrentWeek(1);
-      setCurrentDay(todayIndex);
-    } catch (e: any) {
-      if (e.message?.includes("API_KEY environment variable is not set")) {
-        setError("Configuration Error: The AI service is not set up correctly. Please contact the administrator.");
-      } else {
-        setError(e.message || "An unknown error occurred.");
-      }
+      setPreviousState(null);
+    } catch (error: any) {
+        if (error.message.includes("API_KEY")) {
+            setError("Configuration Error: The AI service is not set up correctly. Please contact the administrator.");
+        } else {
+            setError("Failed to generate workout plan. The AI might be busy. Please try again later.");
+        }
+        console.error(error);
     } finally {
-      setIsLoading(false);
+      setLoading(null);
     }
   };
 
-  const handleModifyWorkout = async (request: string) => {
-    if (!plan || !profile) return;
-    setIsModifying(true);
-    setError(null);
-    try {
-      const modifiedPlan = await modifyWorkoutPlan(plan, request);
-      
-      const { error } = await supabase
-        .from('profiles')
-        .update({ plan: modifiedPlan })
-        .eq('id', profile.id);
-
-      if (error) throw error;
-
-      setPlan(modifiedPlan);
-      setIsChatOpen(false);
-    } catch (e: any) {
-      if (e.message?.includes("API_KEY environment variable is not set")) {
-        setError("Configuration Error: The AI service is not set up correctly. Please contact the administrator.");
-      } else {
-        setError(e.message || "An unknown error occurred.");
-      }
-    } finally {
-      setIsModifying(false);
-    }
+  const updatePlanInDb = async (newPlan: Workout[]) => {
+      if (!session?.user.id) return;
+      await supabase.from('profiles').update({ plan: newPlan }).eq('id', session.user.id);
   };
   
-  const handleToggleExercise = useCallback(async (week: number, day: number, exerciseName: string) => {
-    if (!plan || !profile) return;
-
-    const newPlan = plan.map(workout => {
-        if (workout.week === week && workout.day === day) {
-            return {
-                ...workout,
-                weightExercises: workout.weightExercises.map(ex => 
-                    ex.name === exerciseName ? { ...ex, completed: !ex.completed } : ex
-                )
-            };
-        }
-        return workout;
+  const handleToggleExercise = (week: number, day: number, exerciseName: string) => {
+    setPlan(currentPlan => {
+        if (!currentPlan) return null;
+        const newPlan = currentPlan.map(workout => {
+            if (workout.week === week && workout.day === day) {
+                const newExercises = workout.weightExercises.map(ex => {
+                    if (ex.name === exerciseName) {
+                        return { ...ex, completed: !ex.completed };
+                    }
+                    return ex;
+                });
+                return { ...workout, weightExercises: newExercises };
+            }
+            return workout;
+        });
+        updatePlanInDb(newPlan);
+        return newPlan;
     });
-    
-    setPlan(newPlan); // Optimistic update
-
-    const { error } = await supabase
-        .from('profiles')
-        .update({ plan: newPlan })
-        .eq('id', profile.id);
-
-    if (error) {
-        setError("Failed to save progress. Please try again.");
-        setPlan(plan); // Revert on error
+  };
+  
+  const handleModifyPlan = async (request: string) => {
+    if (!plan) return;
+    setIsModifying(true);
+    try {
+        const newPlan = await modifyWorkoutPlan(plan, request);
+        setPlan(newPlan);
+        updatePlanInDb(newPlan);
+    } catch (error) {
+        setError("Failed to modify the plan. Please try again.");
+    } finally {
+        setIsModifying(false);
+        setIsChatOpen(false);
     }
-  }, [plan, profile]);
+  };
   
   const handleLogWorkout = (workout: Workout) => {
     const newHistory = addWorkoutToHistory(workout);
     setHistory(newHistory);
   };
-
-  const isDateToday = (someDate: Date) => {
-    const today = new Date();
-    return someDate.getDate() === today.getDate() &&
-        someDate.getMonth() === today.getMonth() &&
-        someDate.getFullYear() === today.getFullYear();
-  };
-
-  const currentWorkout = plan?.find(w => w.week === currentWeek && w.day === currentDay);
   
-  const isCurrentWorkoutLogged = useMemo(() => {
-    if (!currentWorkout) return false;
-    return history.some(entry => 
-        entry.workout.week === currentWorkout.week &&
-        entry.workout.day === currentWorkout.day &&
-        isDateToday(new Date(entry.completedDate))
-    );
-  }, [history, currentWorkout]);
-
-  const handleLogout = async () => {
-    setError(null);
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      setError("Failed to log out. Please try again.");
-    }
-    // State will be cleared by the onAuthStateChange listener
-  };
-
   const handleStartOver = () => {
+    if (profile && plan) {
+      setPreviousState({ profile, plan });
+    }
     setProfile(null);
     setPlan(null);
-    setCurrentWeek(1);
-    setCurrentDay(todayIndex);
+    setError(null);
+  };
+  
+  const handleGoBack = () => {
+    if (previousState) {
+      setProfile(previousState.profile);
+      setPlan(previousState.plan);
+      setPreviousState(null);
+      setError(null);
+    }
+  };
+  
+  const handleLogout = async () => {
+    setLoading('Logging out...');
+    await supabase.auth.signOut();
   };
 
-  const renderContent = () => {
-    if (isLoading) {
-      return (
-        <div className="flex flex-col items-center justify-center h-screen text-white">
-          <LoaderIcon className="w-16 h-16 text-brand-blue" />
-          <p className="mt-4 text-xl">Loading your space...</p>
-        </div>
-      );
-    }
+   const todayIndex = useMemo(() => new Date().getDay() || 1, []);
+   const currentWorkout = useMemo(() => {
+    if (!plan) return undefined;
+    return plan.find(w => w.week === currentWeek && w.day === currentDay);
+   }, [plan, currentWeek, currentDay]);
+  
+   const isWorkoutLogged = useMemo(() => {
+     if (!currentWorkout) return false;
+     const today = new Date().toISOString().split('T')[0];
+     return history.some(h =>
+       h.workout.week === currentWorkout.week &&
+       h.workout.day === currentWorkout.day &&
+       h.completedDate.startsWith(today)
+     );
+   }, [history, currentWorkout]);
 
-    if (error) {
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen text-white bg-brand-dark">
+        <LoaderIcon className="w-16 h-16 text-brand-blue" />
+        <p className="mt-4 text-lg">{loading}</p>
+      </div>
+    );
+  }
+  
+  if (!session) {
+    return <Auth />;
+  }
+  
+  const renderContent = () => {
+      if (error) {
         return (
-            <div className="flex flex-col items-center justify-center h-screen text-center text-white p-4">
-                <h2 className="text-2xl text-red-400 font-bold">Oops! Something went wrong.</h2>
-                <p className="mt-2 text-gray-300">{error}</p>
-                <button 
-                    onClick={handleLogout}
-                    className="mt-6 bg-brand-blue text-white font-bold py-2 px-6 rounded-md hover:bg-blue-600 transition-colors">
-                    Log Out
-                </button>
+            <div className="flex flex-col items-center justify-center min-h-[80vh] text-white p-4 text-center">
+                <h2 className="text-2xl font-bold text-red-400">Oops! Something went wrong.</h2>
+                <p className="mt-2 text-gray-400 max-w-md">{error}</p>
+                {previousState && (
+                    <button onClick={handleGoBack} className="mt-6 bg-brand-blue text-white font-bold py-2 px-6 rounded-md hover:bg-blue-600 transition-colors">
+                        Go Back
+                    </button>
+                )}
             </div>
         );
-    }
-    
-    if (!session) {
-      return <Auth />;
-    }
-
-    if (!profile) {
-      return <UserProfileModal onSubmit={handleProfileSubmit} />;
-    }
-    
-    if (plan) {
-      return (
-        <div className="max-w-7xl mx-auto">
-          <WorkoutPlanView 
-            plan={plan} 
-            currentWeek={currentWeek}
-            onSelectWeek={setCurrentWeek}
-            currentDay={currentDay} 
-            onSelectDay={setCurrentDay} 
-            todayIndex={todayIndex}
-           />
-          <div className="border-t border-brand-gray/20 my-2"></div>
-          <DailyWorkoutView 
-            workout={currentWorkout} 
-            onToggleExercise={handleToggleExercise}
-            onLogWorkout={handleLogWorkout}
-            isWorkoutLogged={isCurrentWorkoutLogged}
-          />
-        </div>
-      );
-    }
-    
-    // Fallback case, should be handled by isLoading
-    return null;
-  };
+      }
+      
+      if (profile && plan) {
+        return (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-7xl mx-auto">
+                <div className="lg:col-span-1">
+                    <WorkoutPlanView
+                        plan={plan}
+                        currentWeek={currentWeek}
+                        onSelectWeek={setCurrentWeek}
+                        currentDay={currentDay}
+                        onSelectDay={setCurrentDay}
+                        todayIndex={todayIndex}
+                    />
+                </div>
+                <div className="lg:col-span-1 bg-brand-dark rounded-lg">
+                    <DailyWorkoutView
+                        workout={currentWorkout}
+                        onToggleExercise={handleToggleExercise}
+                        onLogWorkout={handleLogWorkout}
+                        isWorkoutLogged={isWorkoutLogged}
+                    />
+                </div>
+            </div>
+        )
+      }
+      
+      return <UserProfileModal onSubmit={handleCreateProfile} />;
+  }
 
   return (
     <div className="min-h-screen bg-brand-dark text-white font-sans">
-      <header className="bg-brand-light-dark p-4 shadow-md flex justify-between items-center">
-        <div className="flex-1 text-left">
-            {session && plan && (
-                 <button onClick={handleStartOver} className="text-sm bg-brand-gray px-3 py-1 rounded-md hover:bg-gray-600 transition-colors">
-                    Start Over
-                </button>
-            )}
-        </div>
-        <div className="flex-1 text-center">
-            <h1 className="text-2xl font-bold text-brand-blue">GymGenie</h1>
-        </div>
-        <div className="flex-1 text-right flex justify-end items-center gap-2">
-            {session && plan && (
-                <button onClick={() => setIsHistoryOpen(true)} title="Workout History" className="text-sm bg-brand-gray p-2 rounded-md hover:bg-gray-600 transition-colors">
-                    <HistoryIcon className="w-5 h-5" />
-                </button>
-            )}
-            {session && (
-                <button onClick={handleLogout} className="text-sm bg-brand-gray px-3 py-1 rounded-md hover:bg-gray-600 transition-colors">
-                    Log Out
-                </button>
-            )}
-        </div>
+      <header className="bg-brand-light-dark p-4 flex justify-between items-center shadow-md sticky top-0 z-10">
+        <h1 className="text-xl sm:text-2xl font-bold text-brand-blue">
+            GymGenie
+        </h1>
+        {profile && (
+            <div className="flex items-center space-x-2">
+                <button onClick={handleStartOver} className="bg-brand-gray text-white font-semibold py-2 px-4 rounded-md hover:bg-opacity-80 transition-colors text-sm">Start Over</button>
+                <button onClick={() => setIsHistoryOpen(true)} aria-label="Workout History" className="p-2 bg-brand-gray rounded-md hover:bg-opacity-80 transition-colors"><HistoryIcon /></button>
+                <button onClick={handleLogout} className="bg-red-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-red-700 transition-colors text-sm">Log Out</button>
+            </div>
+        )}
       </header>
-      <main className="pb-24">{renderContent()}</main>
-      
-      {session && plan && (
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-brand-dark border-t border-brand-gray/20 flex justify-center">
-            <button
-                onClick={() => setIsChatOpen(true)} 
-                className="bg-brand-blue text-white font-bold py-3 px-6 rounded-full shadow-lg hover:bg-blue-600 transition-transform hover:scale-105 flex items-center space-x-2">
-                <BotIcon className="w-6 h-6"/>
-                <span>Modify My Plan</span>
-            </button>
-        </div>
+      <main className="p-2 sm:p-4">
+        {renderContent()}
+      </main>
+
+      {profile && plan && (
+        <button
+          onClick={() => setIsChatOpen(true)}
+          className="fixed bottom-6 right-6 bg-brand-blue text-white rounded-full p-4 shadow-lg hover:bg-blue-600 transition-transform hover:scale-110"
+          aria-label="Modify workout plan"
+        >
+          <BotIcon className="w-8 h-8" />
+        </button>
       )}
-      <WorkoutHistoryModal 
+      
+      <GeminiChatModal
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        onModify={handleModifyPlan}
+        isLoading={isModifying}
+      />
+      
+      <WorkoutHistoryModal
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
         history={history}
       />
-      <GeminiChatModal 
-        isOpen={isChatOpen}
-        onClose={() => setIsChatOpen(false)}
-        onModify={handleModifyWorkout}
-        isLoading={isModifying}
-      />
     </div>
   );
-};
+}
 
 export default App;
