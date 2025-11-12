@@ -183,6 +183,11 @@ const App: React.FC = () => {
     setError(null);
     setIsLoading(false);
   };
+
+  const handleStartOver = () => {
+    setProfile(null);
+    setPlan(null);
+  };
   
   const currentWorkout = plan?.find(w => w.week === currentWeek && w.day === currentDay);
 
@@ -242,7 +247,13 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-brand-dark text-white font-sans">
       <header className="bg-brand-light-dark p-4 shadow-md flex justify-between items-center">
-        <div className="w-24"></div> {/* Spacer */}
+        <div className="w-24 text-left">
+            {session && plan && (
+                 <button onClick={handleStartOver} className="text-sm bg-brand-gray px-3 py-1 rounded-md hover:bg-gray-600 transition-colors">
+                    Start Over
+                </button>
+            )}
+        </div>
         <h1 className="text-2xl font-bold text-center text-brand-blue">GymGenie</h1>
         <div className="w-24 text-right">
             {session && (
